@@ -59,7 +59,7 @@ THEA/
 
 ## Requirements
 
-- Python **3.10 or 3.11 recommended** (InsightFace wheels are most reliable there)
+- Python **3.12** (pinned to `3.12.11` in `.python-version`; required for prebuilt ML wheels)
 - Node.js 18+ and npm
 - `ffmpeg` available to OpenCV for RTSP streams (recommended)
 - A CPU is enough; an NVIDIA GPU is used automatically if ONNX Runtime sees CUDA
@@ -124,6 +124,20 @@ npm run build
 
 Then the backend serves `frontend/dist` at `http://localhost:8000/` (restart the backend if it
 was already running).
+
+### Deploy on Render
+
+Keep the repository's `.python-version` file. Render defaults to Python 3.14, but the pinned
+`onnx`/`numpy` builds have no Python 3.14 wheels and pip falls back to slow source builds.
+
+- Build command: `pip install -r requirements.txt`
+- Start command: `uvicorn app.main:app --host 0.0.0.0 --port $PORT`
+- Health check path: `/api/health`
+- Set `THEA_ADMIN_PASSWORD` and `THEA_SECRET_KEY` in the service environment.
+
+`frontend/dist` is ignored by Git, so a Python-only build serves the API but not the dashboard.
+Build the frontend in the same Docker image, publish it as a separate static site, or commit a
+built copy and point `THEA_FRONTEND_DIST` at it.
 
 ### Development without InsightFace
 
@@ -362,7 +376,7 @@ npm run build
 
 **InsightFace installation fails**
 
-- Use Python 3.10 or 3.11 in the virtual environment.
+- Use Python 3.12 in the virtual environment (see `.python-version`).
 - Make sure a C/C++ build toolchain is available; some InsightFace versions build Cython
   extensions from source.
 - As a temporary UI-development fallback, set `THEA_FACE_ENGINE=mock`.

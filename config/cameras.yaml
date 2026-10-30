@@ -1,0 +1,60 @@
+# THEA camera list.
+#
+# Add as many cameras as you need. Each camera needs a unique id.
+# RTSP URLs often contain credentials: keep this file private.
+#
+# `rtsp_url` accepts:
+#   - a webcam index such as "0" (this Mac's built-in camera)
+#   - an RTSP URL
+#   - a YouTube live URL (resolved automatically with yt-dlp)
+#   - a local video file path (useful for testing)
+#
+# `target_fps` controls how often frames are run through face detection.
+# 3-5 FPS is a good balance for security footage on CPU. Preview smoothness
+# is separate: THEA_STREAM_FPS controls it (30 FPS by default).
+#
+# `width` and `height` are optional capture hints. They are useful for
+# reducing CPU load from high-resolution webcams and RTSP main streams.
+cameras:
+  # Built-in Mac camera, ready for testing.
+  - id: mac-webcam
+    name: Mac Camera
+    location: This Mac
+    rtsp_url: "1"
+    target_fps: 30
+    width: 1280
+    height: 720
+    enabled: true
+
+  # Public YouTube live stream. THEA uses yt-dlp to resolve the direct HLS
+  # URL each time the camera connects, so expired stream URLs self-heal.
+  - id: ac-boardwalk
+    name: AC Boardwalk Live
+    location: Atlantic City Boardwalk
+    rtsp_url: "https://www.youtube.com/watch?v=ghB-3979WwM"
+    target_fps: 30
+    enabled: true
+
+  # Replace these with your real RTSP cameras, then enable them and click
+  # "Reload cameras" in the dashboard.
+  - id: front-door
+    name: Front Door
+    location: Main entrance
+    rtsp_url: rtsp://username:password@192.168.1.50:554/Streaming/Channels/101
+    target_fps: 30
+    enabled: false
+
+  - id: office
+    name: Office
+    location: Ground floor office
+    rtsp_url: rtsp://username:password@192.168.1.51:554/Streaming/Channels/101
+    target_fps: 30
+    enabled: false
+
+  # Add more cameras at any time:
+  # - id: garage
+  #   name: Garage
+  #   location: Garage
+  #   rtsp_url: rtsp://username:password@192.168.1.52:554/Streaming/Channels/101
+  #   target_fps: 4
+  #   enabled: true

@@ -238,8 +238,9 @@ bot". Pass the cookies of a signed-in YouTube browser session to `yt-dlp`:
 1. Sign in to YouTube in a browser and export cookies for `youtube.com` in Netscape format
    (for example with a "cookies.txt" browser extension).
 2. On Render, add a **Secret File** named `youtube-cookies.txt` with the exported contents.
-3. Set `THEA_YTDLP_COOKIES_FILE=/etc/secrets/youtube-cookies.txt` and redeploy.
-4. Restart or reload the camera.
+3. THEA detects `/etc/secrets/youtube-cookies.txt` automatically. To use another filename,
+   set `THEA_YTDLP_COOKIES_FILE` to its absolute path.
+4. Redeploy and restart or reload the camera.
 
 For local use, point the same variable at a local cookie file:
 
@@ -248,8 +249,9 @@ THEA_YTDLP_COOKIES_FILE=/absolute/path/to/youtube-cookies.txt
 ```
 
 Cookie files contain login tokens. Never commit them; `.gitignore` excludes common names.
-YouTube cookies expire periodically, so refresh the file if the stream becomes unavailable.
-For production reliability, prefer a direct RTSP/HLS source when one is available.
+YouTube cookies expire periodically. If the error says the configured cookies were rejected,
+export a fresh cookie file and redeploy. For production reliability, prefer a direct RTSP/HLS
+source when one is available.
 
 ## Add your first watchlist person
 

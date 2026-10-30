@@ -66,6 +66,25 @@ def test_resolve_stream_url_adds_cookie_hint_for_bot_check(monkeypatch):
         streams.resolve_stream_url("https://www.youtube.com/watch?v=ghB-3979WwM")
 
 
+def test_resolve_stream_url_reports_rejected_cookie_file(monkeypatch, tmp_path):
+    monkeypatch.setattr(streams, "_ytdlp_command", lambda: ["yt-dlp"])
+    cookies = tmp_path / "youtube-cookies.txt"
+    cookies.write_text("# Netscape HTTP Cookie File\n", encoding="utf-8")
+    monkeypatch.setattr(
+        streams.subprocess,
+        "run",
+        lambda *args, **kwargs: SimpleNamespace(
+            returncode=1,
+            stdout="",
+            stderr="ERROR: Sign in to confirm you are not a bot",
+        ),
+    )
+    with pytest.raises(streams.StreamResolveError, match="rejected or have expired"):
+        streams.resolve_stream_url(
+            "https://www.youtube.com/watch?v=ghB-3979WwM", cookies_file=cookies
+        )
+
+
 def test_resolve_stream_url_times_out(monkeypatch):
     monkeypatch.setattr(streams, "_ytdlp_command", lambda: ["yt-dlp"])
 

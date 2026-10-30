@@ -144,6 +144,8 @@ class CameraWorker(threading.Thread):
         source = normalize_source(self.camera.rtsp_url)
         if is_youtube_url(source):
             logger.info("Resolving YouTube live stream for camera %s", self.camera.id)
+            if self.settings.ytdlp_cookies_file:
+                logger.info("Using YouTube cookies for camera %s", self.camera.id)
             try:
                 source = resolve_stream_url(
                     source, cookies_file=self.settings.ytdlp_cookies_file

@@ -75,9 +75,15 @@ def resolve_stream_url(
         detail = (result.stderr or result.stdout).strip().splitlines()
         message = detail[-1] if detail else "no details returned"
         if "sign in to confirm" in message.lower():
-            message += (
-                " Set THEA_YTDLP_COOKIES_FILE to a Netscape-format YouTube cookies file."
-            )
+            if cookies_file:
+                message += (
+                    " The configured YouTube cookies were rejected or have expired;"
+                    " export fresh cookies."
+                )
+            else:
+                message += (
+                    " Set THEA_YTDLP_COOKIES_FILE to a Netscape-format YouTube cookies file."
+                )
         raise StreamResolveError(f"Could not resolve YouTube live stream: {message}")
     urls = [
         line.strip()

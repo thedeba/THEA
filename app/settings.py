@@ -55,6 +55,16 @@ def _resolve_path(value: str, base: Path) -> Path:
     return path.resolve()
 
 
+def _find_ytdlp_cookies() -> Path | None:
+    for candidate in (
+        Path("/etc/secrets/youtube-cookies.txt"),
+        PROJECT_ROOT / "youtube-cookies.txt",
+    ):
+        if candidate.is_file():
+            return candidate
+    return None
+
+
 def _load_or_create_secret(data_dir: Path) -> str:
     env_secret = os.getenv("THEA_SECRET_KEY")
     if env_secret:
@@ -163,7 +173,9 @@ class Settings:
                 PROJECT_ROOT,
             ),
             ytdlp_cookies_file=(
-                _resolve_path(cookies_file, PROJECT_ROOT) if cookies_file else None
+                _resolve_path(cookies_file, PROJECT_ROOT)
+                if cookies_file
+                else _find_ytdlp_cookies()
             ),
         )
         settings.ensure_dirs()

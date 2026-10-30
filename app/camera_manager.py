@@ -145,7 +145,9 @@ class CameraWorker(threading.Thread):
         if is_youtube_url(source):
             logger.info("Resolving YouTube live stream for camera %s", self.camera.id)
             try:
-                source = resolve_stream_url(source)
+                source = resolve_stream_url(
+                    source, cookies_file=self.settings.ytdlp_cookies_file
+                )
             except StreamResolveError as exc:
                 self._set_offline(str(exc))
                 return

@@ -106,6 +106,7 @@ class Settings:
     camera_reconnect_seconds: float = 5.0
     rtsp_transport: str = "tcp"
     frontend_dist: Path = PROJECT_ROOT / "frontend" / "dist"
+    ytdlp_cookies_file: Path | None = None
 
     @property
     def using_default_password(self) -> bool:
@@ -127,6 +128,7 @@ class Settings:
             ).split(",")
             if origin.strip()
         )
+        cookies_file = _env_str("THEA_YTDLP_COOKIES_FILE", "").strip()
         settings = cls(
             admin_username=_env_str("THEA_ADMIN_USERNAME", "admin"),
             admin_password=_env_str("THEA_ADMIN_PASSWORD", "admin"),
@@ -159,6 +161,9 @@ class Settings:
             frontend_dist=_resolve_path(
                 _env_str("THEA_FRONTEND_DIST", str(PROJECT_ROOT / "frontend" / "dist")),
                 PROJECT_ROOT,
+            ),
+            ytdlp_cookies_file=(
+                _resolve_path(cookies_file, PROJECT_ROOT) if cookies_file else None
             ),
         )
         settings.ensure_dirs()

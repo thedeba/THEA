@@ -3,6 +3,7 @@ from __future__ import annotations
 import shutil
 import subprocess
 import sys
+from pathlib import Path
 from urllib.parse import urlsplit
 
 _YOUTUBE_HOSTS = {
@@ -37,7 +38,9 @@ def normalize_source(source: str) -> str | int:
     return int(value) if value.isdigit() else value
 
 
-def resolve_stream_url(source: str, timeout: float = 45.0) -> str:
+def resolve_stream_url(
+    source: str, timeout: float = 45.0, cookies_file: str | Path | None = None
+) -> str:
     if not is_youtube_url(source):
         return source
     command = _ytdlp_command() + [
@@ -45,9 +48,13 @@ def resolve_stream_url(source: str, timeout: float = 45.0) -> str:
         "--no-playlist",
         "-f",
         _FORMAT,
-        "-g",
-        source.strip(),
     ]
+    if cookies_file:
+        cookie_path = Path(cookies_file).expanduser()
+        if not cookie_path.is_file():
+            raise StreamResolveError(f"YouTube cookies file not found: {cookie_path}")
+        command.extend(["--cookies", str(cookie_path)])
+    command.extend(["-g", source.strip()])
     try:
         result = subprocess.run(
             command,
@@ -67,6 +74,10 @@ def resolve_stream_url(source: str, timeout: float = 45.0) -> str:
     if result.returncode != 0:
         detail = (result.stderr or result.stdout).strip().splitlines()
         message = detail[-1] if detail else "no details returned"
+        if "sign in to confirm" in message.lower():
+            message += (
+                " Set THEA_YTDLP_COOKIES_FILE to a Netscape-format YouTube cookies file."
+            )
         raise StreamResolveError(f"Could not resolve YouTube live stream: {message}")
     urls = [
         line.strip()

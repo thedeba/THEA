@@ -232,6 +232,25 @@ At connection time THEA uses `yt-dlp` to resolve the current direct HLS URL, so 
 stream URLs recover automatically on reconnect. Only public streams are supported; private,
 members-only or age-restricted videos need YouTube authentication and are not supported.
 
+Cloud and datacenter IPs (including Render) are often asked to "Sign in to confirm you're not a
+bot". Pass the cookies of a signed-in YouTube browser session to `yt-dlp`:
+
+1. Sign in to YouTube in a browser and export cookies for `youtube.com` in Netscape format
+   (for example with a "cookies.txt" browser extension).
+2. On Render, add a **Secret File** named `youtube-cookies.txt` with the exported contents.
+3. Set `THEA_YTDLP_COOKIES_FILE=/etc/secrets/youtube-cookies.txt` and redeploy.
+4. Restart or reload the camera.
+
+For local use, point the same variable at a local cookie file:
+
+```dotenv
+THEA_YTDLP_COOKIES_FILE=/absolute/path/to/youtube-cookies.txt
+```
+
+Cookie files contain login tokens. Never commit them; `.gitignore` excludes common names.
+YouTube cookies expire periodically, so refresh the file if the stream becomes unavailable.
+For production reliability, prefer a direct RTSP/HLS source when one is available.
+
 ## Add your first watchlist person
 
 1. Open **Watchlist** in the dashboard.

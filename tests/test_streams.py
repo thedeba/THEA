@@ -51,6 +51,21 @@ def test_resolve_stream_url_reports_yt_dlp_failure(monkeypatch):
         streams.resolve_stream_url("https://www.youtube.com/watch?v=ghB-3979WwM")
 
 
+def test_resolve_stream_url_adds_cookie_hint_for_bot_check(monkeypatch):
+    monkeypatch.setattr(streams, "_ytdlp_command", lambda: ["yt-dlp"])
+    monkeypatch.setattr(
+        streams.subprocess,
+        "run",
+        lambda *args, **kwargs: SimpleNamespace(
+            returncode=1,
+            stdout="",
+            stderr="ERROR: Sign in to confirm you are not a bot",
+        ),
+    )
+    with pytest.raises(streams.StreamResolveError, match="THEA_YTDLP_COOKIES_FILE"):
+        streams.resolve_stream_url("https://www.youtube.com/watch?v=ghB-3979WwM")
+
+
 def test_resolve_stream_url_times_out(monkeypatch):
     monkeypatch.setattr(streams, "_ytdlp_command", lambda: ["yt-dlp"])
 
@@ -60,3 +75,35 @@ def test_resolve_stream_url_times_out(monkeypatch):
     monkeypatch.setattr(streams.subprocess, "run", timeout)
     with pytest.raises(streams.StreamResolveError, match="Timed out"):
         streams.resolve_stream_url("https://www.youtube.com/watch?v=ghB-3979WwM")
+
+
+def test_resolve_stream_url_passes_cookie_file(monkeypatch, tmp_path):
+    monkeypatch.setattr(streams, "_ytdlp_command", lambda: ["yt-dlp"])
+    cookies = tmp_path / "youtube-cookies.txt"
+    cookies.write_text("# Netscape HTTP Cookie File\n", encoding="utf-8")
+    captured = {}
+
+    def run(command, **kwargs):
+        captured["command"] = command
+        return SimpleNamespace(
+            returncode=0,
+            stdout="https://manifest.googlevideo.com/live.m3u8\n",
+            stderr="",
+        )
+
+    monkeypatch.setattr(streams.subprocess, "run", run)
+    streams.resolve_stream_url(
+        "https://www.youtube.com/watch?v=ghB-3979WwM", cookies_file=cookies
+    )
+    command = captured["command"]
+    assert command[command.index("--cookies") + 1] == str(cookies)
+    assert command[-2:] == ["-g", "https://www.youtube.com/watch?v=ghB-3979WwM"]
+
+
+def test_resolve_stream_url_rejects_missing_cookie_file(monkeypatch, tmp_path):
+    monkeypatch.setattr(streams, "_ytdlp_command", lambda: ["yt-dlp"])
+    with pytest.raises(streams.StreamResolveError, match="cookies file not found"):
+        streams.resolve_stream_url(
+            "https://www.youtube.com/watch?v=ghB-3979WwM",
+            cookies_file=tmp_path / "missing.txt",
+        )

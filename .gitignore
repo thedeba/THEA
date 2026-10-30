@@ -15,6 +15,10 @@ data/
 .env
 .env.local
 
+# YouTube cookies (sensitive login tokens)
+cookies.txt
+*youtube*cookies*.txt
+
 # Frontend
 frontend/node_modules/
 frontend/dist/

@@ -130,14 +130,14 @@ was already running).
 Keep the repository's `.python-version` file. Render defaults to Python 3.14, but the pinned
 `onnx`/`numpy` builds have no Python 3.14 wheels and pip falls back to slow source builds.
 
-- Build command: `pip install -r requirements.txt`
+- Build command: `bash build.sh`
 - Start command: `uvicorn app.main:app --host 0.0.0.0 --port $PORT`
 - Health check path: `/api/health`
 - Set `THEA_ADMIN_PASSWORD` and `THEA_SECRET_KEY` in the service environment.
 
-`frontend/dist` is ignored by Git, so a Python-only build serves the API but not the dashboard.
-Build the frontend in the same Docker image, publish it as a separate static site, or commit a
-built copy and point `THEA_FRONTEND_DIST` at it.
+`build.sh` installs the Python packages and builds the React dashboard into `frontend/dist`,
+which the backend serves from the same URL. If you keep the old `pip install` build command,
+the deployment will serve the API only.
 
 ### Development without InsightFace
 

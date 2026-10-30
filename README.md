@@ -131,7 +131,7 @@ Keep the repository's `.python-version` file. Render defaults to Python 3.14, bu
 `onnx`/`numpy` builds have no Python 3.14 wheels and pip falls back to slow source builds.
 
 - Build command: `bash build.sh`
-- Start command: `uvicorn app.main:app --host 0.0.0.0 --port $PORT`
+- Start command: `bash start.sh`
 - Health check path: `/api/health`
 - Set `THEA_ADMIN_PASSWORD` and `THEA_SECRET_KEY` in the service environment.
 

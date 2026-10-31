@@ -13,6 +13,7 @@ import numpy as np
 from .alerts import AlertService
 from .cameras_config import CameraConfig, CameraConfigError, load_cameras, mask_url
 from .controls import RuntimeControls
+from .detections import DetectionService
 from .domain import FaceDetection
 from .face_engine import FaceEngineError, FaceEngineManager
 from .matching import ConsecutiveMatchTracker, WatchlistIndex
@@ -37,6 +38,7 @@ class CameraWorker(threading.Thread):
         watchlist: WatchlistIndex,
         alerts: AlertService,
         controls: RuntimeControls,
+        detections: DetectionService | None = None,
     ):
         super().__init__(name=f"camera-{camera.id}", daemon=True)
         self.camera = camera
@@ -45,6 +47,7 @@ class CameraWorker(threading.Thread):
         self.watchlist = watchlist
         self.alerts = alerts
         self.controls = controls
+        self.detections = detections
         self.tracker = IoUTracker(iou_threshold=0.3, max_missed=max(2, int(camera.target_fps)))
         self.streaks = ConsecutiveMatchTracker(settings.consecutive_frames)
         self._stop_event = threading.Event()
@@ -324,6 +327,24 @@ class CameraWorker(threading.Thread):
             bbox = tuple(int(value) for value in face.bbox)
             overlays.append((bbox, label, color))
 
+            if self.detections is not None:
+                try:
+                    self.detections.record(
+                        camera_id=self.camera.id,
+                        camera_name=self.camera.name,
+                        track_id=tracked.track_id,
+                        bbox=bbox,
+                        detection_score=face.score,
+                        frame=frame,
+                        match=match,
+                        threshold=threshold,
+                    )
+                except Exception:
+                    logger.exception(
+                        "Could not record face analysis for camera %s",
+                        self.camera.id,
+                    )
+
         self._set_overlays(overlays)
         with self._state_lock:
             self._frames_processed += 1
@@ -400,12 +421,14 @@ class CameraManager:
         watchlist: WatchlistIndex,
         alerts: AlertService,
         controls: RuntimeControls,
+        detections: DetectionService | None = None,
     ):
         self.settings = settings
         self.face_engine = face_engine
         self.watchlist = watchlist
         self.alerts = alerts
         self.controls = controls
+        self.detections = detections
         self._lock = threading.RLock()
         self._configs: list[CameraConfig] = []
         self._workers: dict[str, CameraWorker] = {}
@@ -435,6 +458,7 @@ class CameraManager:
                     watchlist=self.watchlist,
                     alerts=self.alerts,
                     controls=self.controls,
+                    detections=self.detections,
                 )
                 worker.start()
                 self._workers[camera.id] = worker
@@ -476,6 +500,7 @@ class CameraManager:
                 watchlist=self.watchlist,
                 alerts=self.alerts,
                 controls=self.controls,
+                detections=self.detections,
             )
             new_worker.start()
             with self._lock:

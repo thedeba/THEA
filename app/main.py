@@ -16,7 +16,7 @@ from fastapi.staticfiles import StaticFiles
 
 from . import __version__
 from .auth import get_websocket_user
-from .routers import alerts, auth, cameras, controls, engines, search, watchlist
+from .routers import alerts, auth, cameras, controls, detections, engines, search, watchlist
 from .schemas import HealthOut
 from .services import build_services
 from .settings import Settings, get_settings
@@ -85,6 +85,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(cameras.router)
     app.include_router(watchlist.router)
     app.include_router(alerts.router)
+    app.include_router(detections.router)
     app.include_router(search.router)
 
     @app.get("/api/health", response_model=HealthOut, tags=["system"])

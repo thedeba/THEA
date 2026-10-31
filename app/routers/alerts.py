@@ -6,10 +6,10 @@ from pathlib import Path
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import FileResponse
 
-from ..auth import get_current_user, get_media_user
+from ..auth import get_current_admin, get_current_user, get_media_user
 from ..dates import parse_timestamp
 from ..dependencies import get_services
-from ..schemas import AlertListOut, AlertOut, PathOut
+from ..schemas import AlertListOut, AlertOut, ClearAlertsOut, PathOut
 from ..serializers import alert_to_out, path_to_out
 from ..services import Services
 
@@ -75,6 +75,15 @@ def list_alerts(
         "limit": limit,
         "offset": offset,
     }
+
+
+@router.delete("", response_model=ClearAlertsOut)
+def clear_alerts(
+    services: Services = Depends(get_services),
+    _admin: str = Depends(get_current_admin),
+) -> dict[str, int]:
+    deleted, snapshots_removed = services.alerts.clear_history()
+    return {"deleted": deleted, "snapshots_removed": snapshots_removed}
 
 
 @router.get("/{alert_id}", response_model=AlertOut)

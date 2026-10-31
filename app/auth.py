@@ -94,6 +94,20 @@ def get_current_user(
     return str(payload["sub"])
 
 
+def get_current_admin(
+    request: Request,
+    credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
+) -> str:
+    username = get_current_user(request, credentials)
+    settings = settings_from_app(request.app)
+    if username != settings.admin_username:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin privileges required",
+        )
+    return username
+
+
 def get_media_user(
     request: Request,
     token: str | None = Query(default=None),

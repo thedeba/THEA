@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { api, mediaUrl } from "../api";
+import { useAlerts } from "../alerts";
 import { EmptyState, ErrorBanner, PageLoader, Spinner } from "../components/Feedback";
 import Icon from "../components/Icons";
 import Modal from "../components/Modal";
@@ -19,6 +20,7 @@ function filtersFromParams(params) {
 }
 
 export default function Alerts() {
+  const { clearAlerts } = useAlerts();
   const [searchParams, setSearchParams] = useSearchParams();
   const [form, setForm] = useState(() => filtersFromParams(searchParams));
   const [applied, setApplied] = useState(() => filtersFromParams(searchParams));
@@ -26,10 +28,19 @@ export default function Alerts() {
   const [data, setData] = useState({ total: 0, items: [] });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
   const [selected, setSelected] = useState(null);
   const [trail, setTrail] = useState(null);
   const [trailLoading, setTrailLoading] = useState(false);
+  const [confirmClear, setConfirmClear] = useState(false);
+  const [clearing, setClearing] = useState(false);
   const offset = Math.max(0, Number(searchParams.get("offset") || 0) || 0);
+
+  useEffect(() => {
+    if (!notice) return undefined;
+    const timer = window.setTimeout(() => setNotice(""), 4500);
+    return () => window.clearTimeout(timer);
+  }, [notice]);
 
   useEffect(() => {
     api("/api/cameras")
@@ -106,6 +117,27 @@ export default function Alerts() {
     setSearchParams(next);
   };
 
+  const clearHistory = async () => {
+    setClearing(true);
+    setError("");
+    try {
+      const result = await api("/api/alerts", { method: "DELETE" });
+      clearAlerts();
+      setSelected(null);
+      setTrail(null);
+      setConfirmClear(false);
+      setNotice(`${result.deleted} alerts cleared`);
+      setForm(emptyFilters);
+      setApplied(emptyFilters);
+      setSearchParams(new URLSearchParams());
+      await load();
+    } catch (exc) {
+      setError(exc.message);
+    } finally {
+      setClearing(false);
+    }
+  };
+
   const totalPages = Math.max(1, Math.ceil(data.total / PAGE_SIZE));
   const currentPage = Math.floor(offset / PAGE_SIZE) + 1;
 
@@ -117,7 +149,18 @@ export default function Alerts() {
           <h1>Alert history</h1>
           <p className="muted">Every confirmed watchlist match, stored with its snapshot.</p>
         </div>
-        <span className="badge badge-neutral">{data.total} alerts</span>
+        <div className="header-actions">
+          <span className="badge badge-neutral">{data.total} alerts</span>
+          <button
+            type="button"
+            className="danger-button"
+            onClick={() => setConfirmClear(true)}
+            disabled={clearing || data.total === 0}
+          >
+            <Icon name="trash" size={16} />
+            Clear history
+          </button>
+        </div>
       </div>
 
       <form className="filter-bar" onSubmit={applyFilters}>
@@ -172,6 +215,7 @@ export default function Alerts() {
       </form>
 
       <ErrorBanner message={error} onRetry={load} />
+      {notice ? <div className="notice-banner">{notice}</div> : null}
 
       {loading ? (
         <PageLoader label="Loading alerts" />
@@ -269,6 +313,42 @@ export default function Alerts() {
           </div>
         </div>
       )}
+
+      {confirmClear ? (
+        <Modal
+          title="Clear alert history"
+          onClose={() => {
+            if (!clearing) setConfirmClear(false);
+          }}
+          footer={
+            <div className="modal-actions">
+              <button
+                type="button"
+                className="ghost-button"
+                onClick={() => setConfirmClear(false)}
+                disabled={clearing}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="danger-button"
+                onClick={clearHistory}
+                disabled={clearing}
+              >
+                <Icon name="trash" size={16} />
+                {clearing ? "Clearing..." : "Clear everything"}
+              </button>
+            </div>
+          }
+        >
+          <p>
+            This permanently deletes <strong>{data.total} alerts</strong> and their stored
+            snapshots. Watchlist people and camera configuration are not affected.
+          </p>
+          <p className="muted">This action cannot be undone.</p>
+        </Modal>
+      ) : null}
 
       {selected ? (
         <Modal

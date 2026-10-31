@@ -80,6 +80,30 @@ class AlertListOut(BaseModel):
     offset: int
 
 
+class ClearAlertsOut(BaseModel):
+    deleted: int
+    snapshots_removed: int
+
+
+class DetectionOut(BaseModel):
+    id: str
+    camera_id: str
+    camera_name: str
+    track_id: int
+    person_id: int | None
+    person_name: str | None
+    known: bool
+    match_score: float | None
+    match_percent: float | None
+    detection_score: float
+    bbox: list[int]
+    width: int
+    height: int
+    thumbnail_url: str
+    created_at: str
+    created_ts: float
+
+
 class PathOut(BaseModel):
     path_id: str
     person_id: int | None

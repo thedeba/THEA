@@ -2,9 +2,11 @@ import { useEffect, useRef, useState } from "react";
 import { api, mediaUrl } from "../api";
 import { EmptyState, ErrorBanner, Spinner } from "../components/Feedback";
 import Icon from "../components/Icons";
+import { fileToScanImage, useScan } from "../scan";
 import { formatDateTime } from "../utils";
 
 export default function Search() {
+  const { setScan, clearScan } = useScan();
   const [file, setFile] = useState(null);
   const [preview, setPreview] = useState(null);
   const [threshold, setThreshold] = useState(0.45);
@@ -12,6 +14,8 @@ export default function Search() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const inputRef = useRef(null);
+  const scanRequestRef = useRef(0);
+  const { scan } = useScan();
 
   useEffect(() => {
     if (!file) {
@@ -22,6 +26,24 @@ export default function Search() {
     setPreview(url);
     return () => URL.revokeObjectURL(url);
   }, [file]);
+
+  const chooseFile = async (event) => {
+    const next = event.target.files?.[0] || null;
+    setFile(next);
+    scanRequestRef.current += 1;
+    const requestId = scanRequestRef.current;
+    if (!next) {
+      clearScan();
+      return;
+    }
+    try {
+      const src = await fileToScanImage(next);
+      if (scanRequestRef.current !== requestId) return;
+      setScan({ src, name: next.name, created_ts: Date.now() });
+    } catch {
+      if (scanRequestRef.current === requestId) clearScan();
+    }
+  };
 
   const submit = async (event) => {
     event.preventDefault();
@@ -46,9 +68,11 @@ export default function Search() {
   };
 
   const reset = () => {
+    scanRequestRef.current += 1;
     setFile(null);
     setResult(null);
     setError("");
+    clearScan();
     if (inputRef.current) inputRef.current.value = "";
   };
 
@@ -95,7 +119,7 @@ export default function Search() {
               type="file"
               accept="image/*"
               className="visually-hidden"
-              onChange={(event) => setFile(event.target.files?.[0] || null)}
+              onChange={chooseFile}
             />
             <label className="field">
               <span>

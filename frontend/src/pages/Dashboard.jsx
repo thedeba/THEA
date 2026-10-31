@@ -6,6 +6,7 @@ import { EmptyState, ErrorBanner, PageLoader } from "../components/Feedback";
 import Icon from "../components/Icons";
 import Modal from "../components/Modal";
 import { readRefreshSeconds, readStreamMode } from "../preferences";
+import { useScan } from "../scan";
 import {
   formatClock,
   formatDate,
@@ -22,13 +23,18 @@ function currentFullscreenElement() {
 const SIGNAL_BARS = [32, 58, 44, 82, 66, 96, 54, 74, 48, 88, 62, 38, 70, 52];
 const HERO_TITLE_WORDS = ["Security", "overview"];
 
-function HeroMotion({ onlineCount, monitoring, engineReady, coverage }) {
+function HeroMotion({ onlineCount, monitoring, engineReady, coverage, scan }) {
   const activeBlips = Math.min(6, Math.max(0, onlineCount));
+  const scanLabel = scan
+    ? scan.name || "Query face"
+    : monitoring
+      ? "Live"
+      : "Standby";
   return (
     <div className={`hero-motion${monitoring ? " live" : " paused"}`} aria-hidden="true">
       <div className="motion-topline">
         <span>Sector scan</span>
-        <span>{monitoring ? "Live" : "Standby"}</span>
+        <span className={scan ? "radar-scan-name" : undefined}>{scanLabel}</span>
       </div>
       <div className="motion-radar">
         <span className="radar-ring ring-1" />
@@ -36,11 +42,29 @@ function HeroMotion({ onlineCount, monitoring, engineReady, coverage }) {
         <span className="radar-ring ring-3" />
         <span className="radar-cross cross-x" />
         <span className="radar-cross cross-y" />
+        <span className="radar-ticks" />
+        <span className="radar-pulse pulse-a" />
+        <span className="radar-pulse pulse-b" />
         <span className="radar-sweep" />
-        <span className="radar-orbit"><span /></span>
-        <span className="radar-core">
-          <Icon name="shield" size={18} />
-        </span>
+        <span className="radar-scanline" />
+        <span className="radar-orbit orbit-a"><span /></span>
+        <span className="radar-orbit orbit-b"><span /></span>
+        {scan ? (
+          <span
+            key={scan.created_ts || scan.src}
+            className="radar-face is-query"
+          >
+            <img
+              src={scan.src}
+              alt={scan.name || "Face search query"}
+            />
+            <span className="radar-face-scan" />
+          </span>
+        ) : (
+          <span className="radar-core">
+            <Icon name="shield" size={18} />
+          </span>
+        )}
         {Array.from({ length: 6 }, (_, index) => (
           <span
             key={index}
@@ -59,14 +83,311 @@ function HeroMotion({ onlineCount, monitoring, engineReady, coverage }) {
       </div>
       <div className="motion-footer">
         <span>{Math.round(coverage * 100)}% coverage</span>
+        <span>LOCK {activeBlips}</span>
         <span>{engineReady ? "Core ready" : "Core warmup"}</span>
       </div>
     </div>
   );
 }
 
+function useLiveSeries(value, maxPoints = 32) {
+  const [series, setSeries] = useState(() => [value, value]);
+  const latest = useRef(value);
+  latest.current = value;
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      setSeries((previous) => [...previous, latest.current].slice(-maxPoints));
+    }, 2600);
+    return () => window.clearInterval(timer);
+  }, [maxPoints]);
+  return series;
+}
+
+function clamp(value, min, max) {
+  return Math.min(max, Math.max(min, value));
+}
+
+function sparklinePaths(values, max, width = 100, height = 40) {
+  if (values.length === 0) return { line: "", area: "" };
+  const step = values.length > 1 ? width / (values.length - 1) : width;
+  const points = values.map((value, index) => {
+    const x = index * step;
+    const y = height - clamp(value / max, 0, 1) * height;
+    return [x, y];
+  });
+  const line = points
+    .map(([x, y], index) => `${index === 0 ? "M" : "L"}${x.toFixed(2)},${y.toFixed(2)}`)
+    .join(" ");
+  return { line, area: `${line} L${width},${height} L0,${height} Z` };
+}
+
+function LiveSparkline({ values, max = 100, tone = "accent" }) {
+  const { line, area } = sparklinePaths(values, max);
+  const lastValue = values[values.length - 1] ?? 0;
+  const lastY = 40 - clamp(lastValue / max, 0, 1) * 40;
+  return (
+    <svg
+      className={`live-sparkline ${tone}`}
+      viewBox="0 0 100 40"
+      preserveAspectRatio="none"
+      role="img"
+      aria-label="Live readiness trend"
+    >
+      <defs>
+        <linearGradient id={`spark-fill-${tone}`} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="currentColor" stopOpacity="0.4" />
+          <stop offset="100%" stopColor="currentColor" stopOpacity="0" />
+        </linearGradient>
+      </defs>
+      <path className="spark-area" d={area} fill={`url(#spark-fill-${tone})`} />
+      <path className="spark-line" d={line} vectorEffect="non-scaling-stroke" />
+      <circle className="spark-dot" cx="100" cy={lastY} r="1.6" />
+    </svg>
+  );
+}
+
+function LiveBars({ values, max = 1 }) {
+  return (
+    <div className="live-bars" role="img" aria-label="Live camera coverage">
+      {values.map((value, index) => (
+        <span
+          key={index}
+          className={index === values.length - 1 ? "is-live" : ""}
+          style={{ height: `${Math.max(6, clamp(value / max, 0, 1) * 100)}%` }}
+        />
+      ))}
+    </div>
+  );
+}
+
+function ReadinessPanel({
+  postureScore,
+  postureLabel,
+  coverage,
+  engineReady,
+  watchlistCount,
+  monitoring,
+}) {
+  const scoreHistory = useLiveSeries(postureScore, 36);
+  const coverageHistory = useLiveSeries(coverage, 24);
+
+  return (
+    <section className="panel posture-panel">
+      <div className="panel-header">
+        <div>
+          <p className="eyebrow">Readiness</p>
+          <h2>Security posture</h2>
+        </div>
+        <span className="mono">{postureScore}%</span>
+      </div>
+      <div className="posture-body">
+        <div
+          className="posture-ring"
+          style={{
+            background: `conic-gradient(var(--accent) ${postureScore * 3.6}deg, rgba(255,255,255,0.06) 0deg)`,
+          }}
+        >
+          <div className="posture-ring-inner">
+            <strong>{postureScore}</strong>
+            <span>SCORE</span>
+          </div>
+        </div>
+        <div className="posture-facts">
+          <div>
+            <span>Coverage</span>
+            <strong>{Math.round(coverage * 100)}%</strong>
+          </div>
+          <div>
+            <span>Engine</span>
+            <strong>{engineReady ? "READY" : "WARMING"}</strong>
+          </div>
+          <div>
+            <span>Watchlist</span>
+            <strong>{watchlistCount} ID</strong>
+          </div>
+          <div>
+            <span>Detection</span>
+            <strong>{monitoring ? "LIVE" : "PAUSED"}</strong>
+          </div>
+        </div>
+      </div>
+      <p className={`posture-label posture-${postureLabel.toLowerCase()}`}>
+        {postureLabel} // {monitoring ? "system armed" : "system in standby"}
+      </p>
+
+      <div className="posture-graphs">
+        <div className="posture-graph">
+          <div className="posture-graph-head">
+            <span>Readiness trend</span>
+            <strong className="mono">{postureScore}%</strong>
+          </div>
+          <LiveSparkline values={scoreHistory} max={100} />
+        </div>
+        <div className="posture-graph">
+          <div className="posture-graph-head">
+            <span>Camera coverage</span>
+            <strong className="mono">{Math.round(coverage * 100)}%</strong>
+          </div>
+          <LiveBars values={coverageHistory} max={1} />
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function FaceAnalysisPanel({ faces, connected }) {
+  const [pinnedId, setPinnedId] = useState(null);
+  const pinned = pinnedId ? faces.find((face) => face.id === pinnedId) : null;
+  const selected = pinned || faces[0] || null;
+  const confidence = selected
+    ? selected.known
+      ? selected.match_percent ?? 0
+      : Math.round((selected.detection_score ?? 0) * 100)
+    : 0;
+
+  useEffect(() => {
+    if (pinnedId && !faces.some((face) => face.id === pinnedId)) {
+      setPinnedId(null);
+    }
+  }, [faces, pinnedId]);
+
+  return (
+    <section className="panel face-analysis-panel">
+      <div className="panel-header">
+        <div>
+          <p className="eyebrow">Live biometrics</p>
+          <h2>Face analysis</h2>
+        </div>
+        <span className={`badge ${connected ? "badge-live" : "badge-offline"}`}>
+          {connected ? "Live" : "Offline"}
+        </span>
+      </div>
+
+      <div className={`face-viewport${selected ? " has-face" : ""}`}>
+        {selected ? (
+          <>
+            <img
+              key={selected.id}
+              className="face-zoom"
+              src={mediaUrl(selected.thumbnail_url)}
+              alt={selected.person_name || "Detected face"}
+            />
+            <span className="face-scanline" aria-hidden="true" />
+            <span className="face-reticle" aria-hidden="true" />
+            <span className={`face-status ${selected.known ? "is-known" : "is-unknown"}`}>
+              {selected.known ? "MATCH" : "UNKNOWN"}
+            </span>
+            <span className="face-camera">{selected.camera_name}</span>
+          </>
+        ) : (
+          <div className="face-empty">
+            <span className="face-empty-ring" />
+            <Icon name="crosshair" size={26} />
+            <p>Waiting for a face</p>
+            <span className="muted">The next detected face will appear here.</span>
+          </div>
+        )}
+      </div>
+
+      {selected ? (
+        <>
+          <div className="face-identity">
+            <div>
+              <span className="hud-label">Identity</span>
+              <strong>{selected.known ? selected.person_name : "Unknown face"}</strong>
+              {!selected.known && selected.person_name ? (
+                <span className="control-meta">
+                  Closest match: {selected.person_name} · {selected.match_percent}%
+                </span>
+              ) : (
+                <span className="control-meta">
+                  {selected.known ? "Confirmed watchlist match" : "Not on watchlist"}
+                </span>
+              )}
+            </div>
+            <span className="face-track mono">
+              T{String(selected.track_id).padStart(2, "0")}
+            </span>
+          </div>
+
+          <div className="face-confidence">
+            <div className="face-confidence-head">
+              <span>{selected.known ? "Match confidence" : "Detection score"}</span>
+              <strong>{confidence}%</strong>
+            </div>
+            <div className="face-confidence-bar">
+              <span style={{ width: `${confidence}%` }} />
+            </div>
+          </div>
+
+          <div className="face-metrics">
+            <div>
+              <span>Camera</span>
+              <strong>{selected.camera_name}</strong>
+            </div>
+            <div>
+              <span>Detected</span>
+              <strong>{formatTime(selected.created_at)}</strong>
+            </div>
+            <div>
+              <span>Face box</span>
+              <strong>
+                {selected.width}×{selected.height}
+              </strong>
+            </div>
+            <div>
+              <span>Detector</span>
+              <strong>{Math.round((selected.detection_score ?? 0) * 100)}%</strong>
+            </div>
+          </div>
+        </>
+      ) : null}
+
+      {faces.length > 0 ? (
+        <div className="face-history-wrap">
+          <div className="face-history-head">
+            <span className="hud-label">Recent faces</span>
+            {pinnedId ? (
+              <button
+                type="button"
+                className="face-live-button"
+                onClick={() => setPinnedId(null)}
+              >
+                <span className="status-dot online" />
+                Follow live
+              </button>
+            ) : (
+              <span className="face-live-tag">
+                <span className="status-dot online" />
+                Live
+              </span>
+            )}
+          </div>
+          <div className="face-history">
+            {faces.slice(0, 8).map((face) => (
+              <button
+                type="button"
+                key={face.id}
+                className={`face-thumb${selected?.id === face.id ? " active" : ""}${
+                  face.known ? " known" : ""
+                }`}
+                onClick={() => setPinnedId(face.id)}
+                title={`${face.known ? face.person_name : "Unknown"} · ${face.camera_name}`}
+              >
+                <img src={mediaUrl(face.thumbnail_url)} alt="" loading="lazy" />
+              </button>
+            ))}
+          </div>
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
 export default function Dashboard() {
-  const { recentAlerts, connected, soundEnabled, popupsEnabled } = useAlerts();
+  const { recentAlerts, recentFaces, connected, soundEnabled, popupsEnabled, clearAlerts } =
+    useAlerts();
+  const { scan } = useScan();
   const [cameras, setCameras] = useState([]);
   const [health, setHealth] = useState(null);
   const [paths, setPaths] = useState([]);
@@ -82,6 +403,11 @@ export default function Dashboard() {
   const [streamMode] = useState(() => readStreamMode());
   const [focusId, setFocusId] = useState(null);
   const [focusFullscreen, setFocusFullscreen] = useState(false);
+  const [adminBusy, setAdminBusy] = useState(false);
+  const [thresholdDraft, setThresholdDraft] = useState(0.45);
+  const [confirmClear, setConfirmClear] = useState(false);
+  const [clearing, setClearing] = useState(false);
+  const thresholdDirtyRef = useRef(false);
   const focusFeedRef = useRef(null);
   const [clock, setClock] = useState(() => new Date());
 
@@ -133,6 +459,12 @@ export default function Dashboard() {
   }, [refreshSeconds, streamMode]);
 
   useEffect(() => {
+    if (controls && !thresholdDirtyRef.current) {
+      setThresholdDraft(controls.match_threshold);
+    }
+  }, [controls]);
+
+  useEffect(() => {
     const timer = window.setInterval(() => {
       api("/api/alerts/paths?since_hours=24&limit=5")
         .then(setPaths)
@@ -181,6 +513,56 @@ export default function Dashboard() {
       setActionError(exc.message);
     } finally {
       setReloading(false);
+    }
+  };
+
+  const patchControls = async (patch, message) => {
+    setAdminBusy(true);
+    setActionError("");
+    try {
+      const next = await api("/api/controls", {
+        method: "PATCH",
+        body: JSON.stringify(patch),
+      });
+      setControls(next);
+      if ("match_threshold" in patch) {
+        setThresholdDraft(next.match_threshold);
+        thresholdDirtyRef.current = false;
+      }
+      if (message) setNotice(message);
+    } catch (exc) {
+      setActionError(exc.message);
+    } finally {
+      setAdminBusy(false);
+    }
+  };
+
+  const toggleMonitoring = () => {
+    const next = !monitoring;
+    patchControls(
+      { monitoring_enabled: next },
+      next ? "Monitoring resumed" : "Monitoring paused",
+    );
+  };
+
+  const clearHistory = async () => {
+    setClearing(true);
+    setActionError("");
+    try {
+      const result = await api("/api/alerts", { method: "DELETE" });
+      clearAlerts();
+      setPaths([]);
+      setConfirmClear(false);
+      setNotice(
+        `${result.deleted} alerts cleared${
+          result.snapshots_removed ? ` · ${result.snapshots_removed} snapshots removed` : ""
+        }`,
+      );
+      await load();
+    } catch (exc) {
+      setActionError(exc.message);
+    } finally {
+      setClearing(false);
     }
   };
 
@@ -256,6 +638,33 @@ export default function Dashboard() {
   return (
     <div className="page dashboard-page">
       <section className="command-hero">
+        <div className="hero-ambient" aria-hidden="true">
+          <span className="ambient-orb orb-a" />
+          <span className="ambient-orb orb-b" />
+          <span className="ambient-ring ring-a" />
+          <span className="ambient-ring ring-b" />
+          <span className="ambient-scan" />
+          {Array.from({ length: 14 }, (_, index) => (
+            <span
+              key={index}
+              className="ambient-particle"
+              style={{
+                "--x": `${(index * 37 + 7) % 100}%`,
+                "--y": `${(index * 53 + 11) % 100}%`,
+                "--delay": `${(index * 0.73).toFixed(2)}s`,
+                "--duration": `${7 + (index % 5) * 2}s`,
+                "--size": `${2 + (index % 3)}px`,
+              }}
+            />
+          ))}
+        </div>
+        <div className="hero-frame" aria-hidden="true">
+          <span className="frame-corner tl" />
+          <span className="frame-corner tr" />
+          <span className="frame-corner bl" />
+          <span className="frame-corner br" />
+        </div>
+
         <div className="command-hero-main">
           <p className="eyebrow">THEA // COMMAND CENTER</p>
           <h1 className="hero-title" aria-label="Security overview">
@@ -302,6 +711,7 @@ export default function Dashboard() {
           monitoring={monitoring}
           engineReady={engineReady}
           coverage={coverage}
+          scan={scan}
         />
 
         <div className="command-clock">
@@ -489,48 +899,160 @@ export default function Dashboard() {
         </section>
 
         <aside className="command-side">
-          <section className="panel posture-panel">
+          <FaceAnalysisPanel faces={recentFaces} connected={connected} />
+
+          <section className="panel signal-feed-panel">
             <div className="panel-header">
               <div>
-                <p className="eyebrow">Readiness</p>
-                <h2>Security posture</h2>
+                <p className="eyebrow">Signal feed</p>
+                <h2>Recent alerts</h2>
+                <p className="muted">Updates live over WebSocket.</p>
               </div>
-              <span className="mono">{postureScore}%</span>
+              <Link className="text-link" to="/alerts">
+                View history
+              </Link>
             </div>
-            <div className="posture-body">
-              <div
-                className="posture-ring"
-                style={{
-                  background: `conic-gradient(var(--accent) ${postureScore * 3.6}deg, rgba(255,255,255,0.06) 0deg)`,
-                }}
+            {liveAlerts.length === 0 ? (
+              <EmptyState
+                title="No alerts yet"
+                message="Confirmed watchlist matches will appear here in real time."
+              />
+            ) : (
+              <ul className="alert-feed">
+                {liveAlerts.map((alert) => (
+                  <li key={alert.id}>
+                    <Link to="/alerts" className="alert-feed-item">
+                      <span className="feed-thumb">
+                        {alert.snapshot_url ? (
+                          <img src={mediaUrl(alert.snapshot_url)} alt={alert.person_name} />
+                        ) : null}
+                      </span>
+                      <span className="feed-main">
+                        <span className="feed-title">
+                          <strong>{alert.person_name}</strong>
+                          <span className="match-pill">{alert.confidence_percent}%</span>
+                        </span>
+                        <span className="muted">
+                          {alert.camera_name} · {formatTime(alert.created_at)}
+                        </span>
+                      </span>
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+
+          <ReadinessPanel
+            postureScore={postureScore}
+            postureLabel={postureLabel}
+            coverage={coverage}
+            engineReady={engineReady}
+            watchlistCount={watchlistCount}
+            monitoring={monitoring}
+          />
+
+          <section className="panel admin-panel">
+            <div className="panel-header">
+              <div>
+                <p className="eyebrow">Administrator</p>
+                <h2>Admin controls</h2>
+              </div>
+              <span className="badge badge-neutral">Admin</span>
+            </div>
+
+            <div className="admin-actions">
+              <button
+                type="button"
+                className={`admin-action ${monitoring ? "is-on" : "is-off"}`}
+                onClick={toggleMonitoring}
+                disabled={adminBusy}
               >
-                <div className="posture-ring-inner">
-                  <strong>{postureScore}</strong>
-                  <span>SCORE</span>
-                </div>
+                <span className="control-icon">
+                  <Icon name={monitoring ? "pause" : "play"} size={16} />
+                </span>
+                <span className="admin-action-copy">
+                  <strong>{monitoring ? "Pause monitoring" : "Resume monitoring"}</strong>
+                  <span className="control-meta">Face matching on every camera</span>
+                </span>
+              </button>
+
+              <button
+                type="button"
+                className="admin-action"
+                onClick={reloadCameras}
+                disabled={reloading}
+              >
+                <span className="control-icon">
+                  <Icon name="camera" size={16} />
+                </span>
+                <span className="admin-action-copy">
+                  <strong>{reloading ? "Reloading cameras" : "Reload cameras"}</strong>
+                  <span className="control-meta">Re-read config/cameras.yaml</span>
+                </span>
+              </button>
+
+              <button
+                type="button"
+                className="admin-action danger"
+                onClick={() => setConfirmClear(true)}
+                disabled={clearing || (health?.alerts ?? 0) === 0}
+              >
+                <span className="control-icon danger">
+                  <Icon name="trash" size={16} />
+                </span>
+                <span className="admin-action-copy">
+                  <strong>Clear alert history</strong>
+                  <span className="control-meta">{health?.alerts ?? 0} alerts stored</span>
+                </span>
+              </button>
+
+              <Link to="/settings" className="admin-action">
+                <span className="control-icon">
+                  <Icon name="sliders" size={16} />
+                </span>
+                <span className="admin-action-copy">
+                  <strong>Open settings</strong>
+                  <span className="control-meta">Engines, feeds and notifications</span>
+                </span>
+              </Link>
+            </div>
+
+            <div className="admin-threshold">
+              <div className="admin-threshold-head">
+                <span className="hud-label">Match threshold</span>
+                <strong>{Math.round(thresholdDraft * 100)}%</strong>
               </div>
-              <div className="posture-facts">
-                <div>
-                  <span>Coverage</span>
-                  <strong>{Math.round(coverage * 100)}%</strong>
-                </div>
-                <div>
-                  <span>Engine</span>
-                  <strong>{engineReady ? "READY" : "WARMING"}</strong>
-                </div>
-                <div>
-                  <span>Watchlist</span>
-                  <strong>{watchlistCount} ID</strong>
-                </div>
-                <div>
-                  <span>Detection</span>
-                  <strong>{monitoring ? "LIVE" : "PAUSED"}</strong>
-                </div>
+              <input
+                type="range"
+                min="0.2"
+                max="0.9"
+                step="0.01"
+                value={thresholdDraft}
+                className="hud-range"
+                onChange={(event) => {
+                  setThresholdDraft(Number(event.target.value));
+                  thresholdDirtyRef.current = true;
+                }}
+                aria-label="Match threshold"
+              />
+              <div className="admin-threshold-actions">
+                <span className="control-meta">Live {Math.round(threshold * 100)}%</span>
+                <button
+                  type="button"
+                  className="ghost-button small"
+                  onClick={() =>
+                    patchControls(
+                      { match_threshold: Number(thresholdDraft) },
+                      `Threshold set to ${Math.round(thresholdDraft * 100)}%`,
+                    )
+                  }
+                  disabled={adminBusy || Math.abs(thresholdDraft - threshold) < 0.005}
+                >
+                  Apply
+                </button>
               </div>
             </div>
-            <p className={`posture-label posture-${postureLabel.toLowerCase()}`}>
-              {postureLabel} // {monitoring ? "system armed" : "system in standby"}
-            </p>
           </section>
 
           <section className="panel vitals-panel">
@@ -575,87 +1097,79 @@ export default function Dashboard() {
         </aside>
       </div>
 
-      <div className="two-column">
-        <section className="panel">
-          <div className="panel-header">
-            <div>
-              <p className="eyebrow">Signal feed</p>
-              <h2>Recent alerts</h2>
-              <p className="muted">Updates live over WebSocket.</p>
-            </div>
-            <Link className="text-link" to="/alerts">
-              View history
-            </Link>
+      <section className="panel cross-camera-panel">
+        <div className="panel-header">
+          <div>
+            <p className="eyebrow">Cross-camera</p>
+            <h2>Movement trails</h2>
+            <p className="muted">Same person seen on multiple cameras within two minutes.</p>
           </div>
-          {liveAlerts.length === 0 ? (
-            <EmptyState
-              title="No alerts yet"
-              message="Confirmed watchlist matches will appear here in real time."
-            />
-          ) : (
-            <ul className="alert-feed">
-              {liveAlerts.map((alert) => (
-                <li key={alert.id}>
-                  <Link to="/alerts" className="alert-feed-item">
-                    <span className="feed-thumb">
-                      {alert.snapshot_url ? (
-                        <img src={mediaUrl(alert.snapshot_url)} alt={alert.person_name} />
-                      ) : null}
-                    </span>
-                    <span className="feed-main">
-                      <span className="feed-title">
-                        <strong>{alert.person_name}</strong>
-                        <span className="match-pill">{alert.confidence_percent}%</span>
-                      </span>
-                      <span className="muted">
-                        {alert.camera_name} · {formatTime(alert.created_at)}
-                      </span>
-                    </span>
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
-
-        <section className="panel">
-          <div className="panel-header">
-            <div>
-              <p className="eyebrow">Cross-camera</p>
-              <h2>Movement trails</h2>
-              <p className="muted">Same person seen on multiple cameras within two minutes.</p>
-            </div>
-          </div>
-          {paths.length === 0 ? (
-            <EmptyState
-              title="No cross-camera trails"
-              message="Trails appear when a matched person moves between cameras in a short window."
-            />
-          ) : (
-            <ul className="trail-list">
-              {paths.map((path) => (
-                <li key={path.path_id} className="trail-item">
-                  <span className="trail-icon">
-                    <Icon name="trail" size={17} />
-                  </span>
-                  <div>
-                    <div className="trail-title">
-                      <strong>{path.person_name || "Unknown"}</strong>
-                      <span className="muted">
-                        {path.event_count} events · {shortId(path.path_id)}
-                      </span>
-                    </div>
-                    <p className="trail-cameras">{path.cameras.join("  →  ")}</p>
-                    <span className="muted small-text">
-                      {formatTime(path.start_ts)} – {formatTime(path.end_ts)}
+        </div>
+        {paths.length === 0 ? (
+          <EmptyState
+            title="No cross-camera trails"
+            message="Trails appear when a matched person moves between cameras in a short window."
+          />
+        ) : (
+          <ul className="trail-list">
+            {paths.map((path) => (
+              <li key={path.path_id} className="trail-item">
+                <span className="trail-icon">
+                  <Icon name="trail" size={17} />
+                </span>
+                <div>
+                  <div className="trail-title">
+                    <strong>{path.person_name || "Unknown"}</strong>
+                    <span className="muted">
+                      {path.event_count} events · {shortId(path.path_id)}
                     </span>
                   </div>
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
-      </div>
+                  <p className="trail-cameras">{path.cameras.join("  →  ")}</p>
+                  <span className="muted small-text">
+                    {formatTime(path.start_ts)} – {formatTime(path.end_ts)}
+                  </span>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+
+      {confirmClear ? (
+        <Modal
+          title="Clear alert history"
+          onClose={() => {
+            if (!clearing) setConfirmClear(false);
+          }}
+          footer={
+            <div className="modal-actions">
+              <button
+                type="button"
+                className="ghost-button"
+                onClick={() => setConfirmClear(false)}
+                disabled={clearing}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="danger-button"
+                onClick={clearHistory}
+                disabled={clearing}
+              >
+                <Icon name="trash" size={16} />
+                {clearing ? "Clearing..." : "Clear everything"}
+              </button>
+            </div>
+          }
+        >
+          <p>
+            This permanently deletes <strong>{health?.alerts ?? 0} alerts</strong> and their stored
+            snapshots. Watchlist people and camera configuration are not affected.
+          </p>
+          <p className="muted">This action cannot be undone.</p>
+        </Modal>
+      ) : null}
 
       {focusCamera ? (
         <Modal

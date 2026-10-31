@@ -2,8 +2,11 @@ from __future__ import annotations
 
 import time
 
+import cv2
+import numpy as np
 from fastapi.testclient import TestClient
 
+from app.domain import WatchlistMatch
 from conftest import sample_jpeg
 
 
@@ -114,6 +117,35 @@ def test_watchlist_search_and_history(
     assert remaining["items"][0]["person_name"] == "Alex Morgan"
 
 
+def test_admin_can_clear_alert_history(
+    client: TestClient, auth_headers: dict[str, str]
+) -> None:
+    services = client.app.state.services
+    snapshot = services.settings.snapshots_dir / "manual.jpg"
+    snapshot.write_bytes(b"snapshot")
+    services.database.add_alert(
+        person_id=None,
+        person_name="Unknown",
+        camera_id="cam-1",
+        camera_name="Camera One",
+        confidence=0.8,
+        snapshot_path="snapshots/manual.jpg",
+        embedding=np.zeros(4, dtype=np.float32),
+        path_id="path-clear",
+        created_ts=time.time(),
+    )
+
+    assert client.delete("/api/alerts").status_code == 401
+
+    response = client.delete("/api/alerts", headers=auth_headers)
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["deleted"] == 1
+    assert body["snapshots_removed"] == 1
+    assert not snapshot.exists()
+    assert client.get("/api/alerts", headers=auth_headers).json()["total"] == 0
+
+
 def test_websocket_requires_token_and_accepts_valid_token(
     client: TestClient, auth_headers: dict[str, str]
 ) -> None:
@@ -123,6 +155,71 @@ def test_websocket_requires_token_and_accepts_valid_token(
         assert message["type"] == "connected"
         websocket.send_text("ping")
         assert websocket.receive_json()["type"] == "pong"
+
+
+def test_face_detection_feed_and_thumbnails(
+    client: TestClient, auth_headers: dict[str, str]
+) -> None:
+    services = client.app.state.services
+    frame = cv2.imdecode(np.frombuffer(sample_jpeg(), np.uint8), cv2.IMREAD_COLOR)
+    assert frame is not None
+
+    known = services.detections.record(
+        camera_id="cam-1",
+        camera_name="Camera One",
+        track_id=4,
+        bbox=(70, 40, 250, 220),
+        detection_score=0.97,
+        frame=frame,
+        match=WatchlistMatch(person_id=7, name="Alex Morgan", score=0.91),
+        threshold=0.45,
+    )
+    assert known is not None
+    assert known["type"] == "face"
+    assert known["known"] is True
+    assert known["person_name"] == "Alex Morgan"
+    assert known["match_percent"] == 91.0
+
+    throttled = services.detections.record(
+        camera_id="cam-1",
+        camera_name="Camera One",
+        track_id=4,
+        bbox=(70, 40, 250, 220),
+        detection_score=0.97,
+        frame=frame,
+        match=WatchlistMatch(person_id=7, name="Alex Morgan", score=0.91),
+        threshold=0.45,
+    )
+    assert throttled is None
+
+    unknown = services.detections.record(
+        camera_id="cam-1",
+        camera_name="Camera One",
+        track_id=5,
+        bbox=(80, 50, 240, 210),
+        detection_score=0.82,
+        frame=frame,
+        match=None,
+        threshold=0.45,
+    )
+    assert unknown is not None
+    assert unknown["known"] is False
+    assert unknown["person_name"] is None
+
+    assert client.get("/api/detections").status_code == 401
+
+    response = client.get("/api/detections?limit=5", headers=auth_headers)
+    assert response.status_code == 200, response.text
+    items = response.json()
+    assert [item["id"] for item in items] == [unknown["id"], known["id"]]
+    assert "thumbnail" not in items[0]
+    assert items[0]["thumbnail_url"].endswith("/thumbnail")
+
+    thumbnail = client.get(items[0]["thumbnail_url"], headers=auth_headers)
+    assert thumbnail.status_code == 200
+    assert thumbnail.headers["content-type"] == "image/jpeg"
+    assert len(thumbnail.content) > 0
+    assert client.get("/api/detections/missing/thumbnail", headers=auth_headers).status_code == 404
 
 
 def test_runtime_controls(client: TestClient, auth_headers: dict[str, str]) -> None:

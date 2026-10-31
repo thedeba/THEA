@@ -10,6 +10,7 @@ import Login from "./pages/Login";
 import Search from "./pages/Search";
 import Settings from "./pages/Settings";
 import Watchlist from "./pages/Watchlist";
+import { ScanProvider } from "./scan";
 
 export default function App() {
   const { user, loading } = useAuth();
@@ -29,16 +30,18 @@ export default function App() {
 
   return (
     <AlertProvider>
-      <Routes>
-        <Route element={<Layout />}>
-          <Route index element={<Dashboard />} />
-          <Route path="alerts" element={<Alerts />} />
-          <Route path="watchlist" element={<Watchlist />} />
-          <Route path="search" element={<Search />} />
-          <Route path="settings" element={<Settings />} />
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Route>
-      </Routes>
+      <ScanProvider>
+        <Routes>
+          <Route element={<Layout />}>
+            <Route index element={<Dashboard />} />
+            <Route path="alerts" element={<Alerts />} />
+            <Route path="watchlist" element={<Watchlist />} />
+            <Route path="search" element={<Search />} />
+            <Route path="settings" element={<Settings />} />
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Route>
+        </Routes>
+      </ScanProvider>
     </AlertProvider>
   );
 }

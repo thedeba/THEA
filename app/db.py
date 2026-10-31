@@ -29,6 +29,15 @@ CREATE TABLE IF NOT EXISTS persons (
     updated_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS plates (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    plate_text TEXT NOT NULL UNIQUE,
+    plate_image TEXT NOT NULL,
+    confidence REAL,
+    camera_id TEXT,
+    created_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS person_photos (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     person_id INTEGER NOT NULL REFERENCES persons(id) ON DELETE CASCADE,
@@ -520,3 +529,13 @@ class Database:
         with self.connect() as connection:
             row = connection.execute("SELECT COUNT(*) AS count FROM alerts").fetchone()
         return int(row["count"])
+
+    def clear_alerts(self) -> tuple[int, list[str]]:
+        with self.connect() as connection:
+            rows = connection.execute(
+                "SELECT snapshot_path FROM alerts WHERE snapshot_path IS NOT NULL"
+            ).fetchall()
+            cursor = connection.execute("DELETE FROM alerts")
+            deleted = int(cursor.rowcount)
+        snapshots = [str(row["snapshot_path"]) for row in rows if row["snapshot_path"]]
+        return deleted, snapshots

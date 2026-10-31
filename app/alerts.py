@@ -92,6 +92,21 @@ class AlertService:
         )
         return event
 
+    def clear_history(self) -> tuple[int, int]:
+        with self._lock:
+            deleted, snapshots = self.database.clear_alerts()
+        removed = 0
+        for relative_path in snapshots:
+            path = self.settings.data_dir / relative_path
+            if path.is_file() and self._is_inside_data_dir(path):
+                try:
+                    path.unlink()
+                    removed += 1
+                except OSError:
+                    logger.warning("Could not remove alert snapshot %s", relative_path)
+        logger.info("Cleared %s alerts (%s snapshots)", deleted, removed)
+        return deleted, removed
+
     def _save_snapshot(
         self,
         *,

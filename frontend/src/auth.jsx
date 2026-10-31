@@ -47,6 +47,7 @@ export function AuthProvider({ children }) {
 
   const logout = useCallback(() => {
     clearToken();
+    window.dispatchEvent(new Event("thea:logout"));
     setUser(null);
   }, []);
 

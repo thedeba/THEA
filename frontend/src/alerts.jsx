@@ -66,8 +66,17 @@ function mergeAlerts(previous, incoming) {
     .slice(0, 100);
 }
 
+function mergeFaces(previous, incoming) {
+  const map = new Map(previous.map((item) => [item.id, item]));
+  incoming.forEach((item) => map.set(item.id, item));
+  return Array.from(map.values())
+    .sort((a, b) => b.created_ts - a.created_ts)
+    .slice(0, 30);
+}
+
 export function AlertProvider({ children }) {
   const [recentAlerts, setRecentAlerts] = useState([]);
+  const [recentFaces, setRecentFaces] = useState([]);
   const [toasts, setToasts] = useState([]);
   const [connected, setConnected] = useState(false);
   const [soundEnabled, setSoundEnabled] = useState(
@@ -105,6 +114,11 @@ export function AlertProvider({ children }) {
         if (!cancelled) setRecentAlerts((previous) => mergeAlerts(previous, data.items));
       })
       .catch(() => {});
+    api("/api/detections?limit=20")
+      .then((data) => {
+        if (!cancelled) setRecentFaces((previous) => mergeFaces(previous, data));
+      })
+      .catch(() => {});
     return () => {
       cancelled = true;
     };
@@ -126,6 +140,10 @@ export function AlertProvider({ children }) {
       window.setTimeout(() => {
         setToasts((previous) => previous.filter((item) => item.toastKey !== toast.toastKey));
       }, 9000);
+    };
+
+    const handleFace = (face) => {
+      setRecentFaces((previous) => mergeFaces(previous, [face]));
     };
 
     const connect = () => {
@@ -150,6 +168,7 @@ export function AlertProvider({ children }) {
           return;
         }
         if (payload.type === "alert") handleAlert(payload);
+        if (payload.type === "face") handleFace(payload);
         if (payload.type === "connected") setConnected(true);
       };
       socket.onclose = (event) => {
@@ -183,17 +202,32 @@ export function AlertProvider({ children }) {
 
   const toggleSound = useCallback(() => setSoundEnabled((value) => !value), []);
   const togglePopups = useCallback(() => setPopupsEnabled((value) => !value), []);
+  const clearAlerts = useCallback(() => {
+    setRecentAlerts([]);
+    setToasts([]);
+  }, []);
 
   const value = useMemo(
     () => ({
       recentAlerts,
+      recentFaces,
       connected,
       soundEnabled,
       popupsEnabled,
       toggleSound,
       togglePopups,
+      clearAlerts,
     }),
-    [recentAlerts, connected, soundEnabled, popupsEnabled, toggleSound, togglePopups],
+    [
+      recentAlerts,
+      recentFaces,
+      connected,
+      soundEnabled,
+      popupsEnabled,
+      toggleSound,
+      togglePopups,
+      clearAlerts,
+    ],
   );
 
   return (
